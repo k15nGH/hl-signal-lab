@@ -243,11 +243,16 @@ footer{border-top:1px solid var(--line);padding:16px;color:var(--dim);font-size:
 <!-- ================= ログ ================= -->
 <section id="tab-log" class="tab">
   <div class="row">
+    <select id="lgRule" class="btn"><option value="">全ルール</option></select>
+    <select id="lgTier" class="btn"><option value="">全確度</option><option value="S">S級のみ</option><option value="A">A級のみ</option><option value="B">B級のみ</option><option value="C">C級のみ</option></select>
+    <input id="lgCoin" class="inp" placeholder="銘柄で絞り込み" style="width:140px">
+    <span id="lgCount" class="dimtx" style="font-size:12px"></span>
+    <span style="flex:1"></span>
     <button id="logClear" class="btn">ログを消去</button>
-    <button id="logCsv" class="btn">CSVダウンロード</button>
+    <button id="logCsv" class="btn">CSV（絞り込み反映）</button>
   </div>
   <div class="tblwrap">
-    <table><thead><tr><th style="text-align:left">時刻</th><th style="text-align:left">銘柄</th><th style="text-align:left">確度</th><th style="text-align:left">ルール</th><th style="text-align:left">内容</th></tr></thead>
+    <table id="logTbl"><thead><tr><th style="text-align:left" data-k="t">時刻</th><th style="text-align:left" data-k="coin">銘柄</th><th style="text-align:left" data-k="pts">確度</th><th style="text-align:left" data-k="rule">ルール</th><th style="text-align:left">内容</th></tr></thead>
     <tbody id="logBody"><tr><td colspan="5" class="dimtx">アラートはまだありません</td></tr></tbody></table>
   </div>
 </section>
@@ -266,7 +271,7 @@ footer{border-top:1px solid var(--line);padding:16px;color:var(--dim);font-size:
         </select></label>
       <label class="dimtx" style="font-size:12px">レバレッジ
         <select id="swLev" class="btn">
-          <option value="auto" selected>型別推奨（ス3x/デ5x/スキャ10x）</option>
+          <option value="auto" selected>プリセット推奨（各設定のレバを使用）</option>
           <option value="1">1x</option><option value="3">3x</option><option value="5">5x</option>
           <option value="10">10x</option><option value="20">20x</option>
         </select></label>
@@ -291,6 +296,11 @@ footer{border-top:1px solid var(--line);padding:16px;color:var(--dim);font-size:
       <button id="bApplyScan" class="btn">複数銘柄で横断検証</button>
     </div>
     <div id="presetNote" class="note" style="display:none"></div>
+    <div class="row" style="margin-top:8px;margin-bottom:0">
+      <input id="pName" class="inp" placeholder="マイプリセット名（例: 自作EMA改）" style="width:230px">
+      <button id="pSave" class="btn">💾 現在の設定を保存</button>
+      <button id="pDel" class="btn" disabled>選択中のマイプリセットを削除</button>
+    </div>
     <div class="hint">プリセットは公開研究・検証記事で成績が報告されている型を初期値化したものです。<span class="warn">利益を保証するものではありません。</span>「複数銘柄で横断検証」を押すと、下で選択中の銘柄群に同じロジックを一括適用し、成績ランキングで最も相性の良い銘柄を探せます。</div>
   </div>
 
@@ -354,6 +364,15 @@ footer{border-top:1px solid var(--line);padding:16px;color:var(--dim);font-size:
       <div class="f"><label>トレンドフィルタ</label>
         <select id="bFilter" class="inp"><option value="none">なし</option><option value="sma200">SMA200（上でロングのみ/下でショートのみ）</option><option value="sma50">SMA50（同上）</option></select>
       </div>
+      <div class="f"><label>時間帯フィルタ（UTC・シグナル時刻）</label>
+        <select id="bSession" class="inp">
+          <option value="none">なし（24時間）</option>
+          <option value="us">米国時間（13–21 UTC）</option>
+          <option value="asia">アジア時間（0–8 UTC）</option>
+          <option value="eu">欧州時間（7–15 UTC）</option>
+          <option value="monday">週明け（日23時UTC→月曜）</option>
+        </select>
+      </div>
       <div class="f"><label>保有期間（最大H本）</label><input id="bHold" class="inp num" type="number" value="6"></div>
       <div class="f"><label>エントリー遅延（発火後に待つ本数）</label><input id="bWait" class="inp num" type="number" value="0"></div>
       <div class="f"><label>SL/TP 単位</label>
@@ -371,6 +390,7 @@ footer{border-top:1px solid var(--line);padding:16px;color:var(--dim);font-size:
     <div class="row" style="margin-top:12px;margin-bottom:0">
       <button id="btRun" class="btn primary">検証を実行</button>
       <button id="btStop" class="btn" disabled>中断</button>
+      <button id="btCfg" class="btn">🤖 bot用設定を書き出す</button>
       <span class="hint">損益・手数料・最大DDは<b>レバレッジ適用後の証拠金ベース</b>で計算。清算距離（≈ 1/レバ − 維持証拠金率）に達した取引は<span class="neg">−100%（証拠金全損）</span>として計上。損切り/利確は価格ベース入力で、各足の高値・安値で判定（同一足では清算→損切り→利確の順の保守計算）。HIP-3銘柄は手数料約2倍。</span>
     </div>
     <div id="btProg"></div>
@@ -1187,21 +1207,48 @@ $('importFile').onchange=e=>{
 };
 
 /* ============ ログ ============ */
+let lgK='t',lgD=-1;
+function logFiltered(){
+  const fr=$('lgRule').value,ft=$('lgTier').value,fc=$('lgCoin').value.trim().toUpperCase();
+  let a=logItems.filter(l=>(!fr||l.rule===fr)&&(!ft||l.tier===ft)&&(!fc||String(l.coin).toUpperCase().includes(fc)));
+  a=a.slice().sort((x,y)=>{
+    if(lgK==='t')return lgD*(x.t-y.t);
+    if(lgK==='pts')return lgD*((x.pts||0)-(y.pts||0));
+    return lgD*String(x[lgK]||'').localeCompare(String(y[lgK]||''));
+  });
+  return a;
+}
 function renderLog(){
-  $('logBody').innerHTML=logItems.map(l=>`<tr>
+  const sel=$('lgRule'),cur=sel.value;
+  const rl=[...new Set(logItems.map(l=>l.rule))];
+  sel.innerHTML='<option value="">全ルール</option>'+rl.map(r=>`<option value="${esc(r)}">${esc(r)}</option>`).join('');
+  if(rl.includes(cur))sel.value=cur;
+  const a=logFiltered();
+  $('lgCount').textContent=logItems.length?`${a.length} / ${logItems.length} 件`:'';
+  document.querySelectorAll('#logTbl thead th').forEach(t=>t.classList.toggle('sorted',t.dataset.k===lgK));
+  $('logBody').innerHTML=a.map(l=>`<tr>
     <td style="text-align:left" class="num">${fmtTime(l.t)}</td>
     <td style="text-align:left"><b>${esc(dispName(l.coin))}</b>${dexTag(l.coin)?`<span class="dex">${esc(dexTag(l.coin))}</span>`:''}</td>
     <td style="text-align:left"><span class="tier-${l.tier||'B'}">${l.tier||'–'}級 ${isFinite(l.pts)?l.pts:''}</span></td>
     <td style="text-align:left">${esc(l.rule)}</td>
     <td style="text-align:left">${esc(l.msg)}</td></tr>`).join('')
-    ||'<tr><td colspan="5" class="dimtx">アラートはまだありません</td></tr>';
+    ||`<tr><td colspan="5" class="dimtx">${logItems.length?'絞り込み条件に該当なし':'アラートはまだありません'}</td></tr>`;
 }
+$('lgRule').addEventListener('change',renderLog);
+$('lgTier').addEventListener('change',renderLog);
+$('lgCoin').addEventListener('input',renderLog);
+document.querySelectorAll('#logTbl thead th').forEach(th=>{
+  th.onclick=()=>{const k=th.dataset.k; if(!k)return;
+    if(lgK===k)lgD*=-1; else{lgK=k;lgD=(k==='t'||k==='pts')?-1:1;}
+    renderLog();};
+});
 $('logClear').onclick=()=>{logItems=[];unseen=0;updateBadge();renderLog();};
 $('logCsv').onclick=()=>{
-  const csv='\uFEFF時刻,銘柄,確度,ルール,内容\n'+logItems.map(l=>
+  const a=logFiltered();
+  const csv='\uFEFF時刻,銘柄,確度,ルール,内容\n'+a.map(l=>
     [new Date(l.t).toLocaleString('ja-JP'),l.coin,(l.tier||'')+(isFinite(l.pts)?l.pts:''),l.rule,l.msg].map(s=>'"'+String(s).replace(/"/g,'""')+'"').join(',')).join('\n');
-  const a=document.createElement('a');a.href=URL.createObjectURL(new Blob([csv],{type:'text/csv'}));
-  a.download='hl_alerts.csv';a.click();
+  const dl=document.createElement('a');dl.href=URL.createObjectURL(new Blob([csv],{type:'text/csv'}));
+  dl.download='hl_alerts.csv';dl.click();
 };
 
 /* ============ 指標計算 ============ */
@@ -1258,6 +1305,7 @@ function btParams(){
     N:Math.max(2,parseInt($('bN').value)||5),
     Vk:parseFloat($('bVk').value)||4,Vm:Math.max(2,parseInt($('bVm').value)||20),
     trend:$('bTrend').value,side:$('bSide').value,filter:$('bFilter').value,
+    session:$('bSession').value,
     H:Math.max(1,parseInt($('bHold').value)||6),
     wait:Math.max(0,parseInt($('bWait').value)||0),
     sl:Math.max(0,parseFloat($('bSl').value)||0),tp:Math.max(0,parseFloat($('bTp').value)||0),
@@ -1347,6 +1395,15 @@ function runStrategy(arr,p){
     if(p.trend==='counter')s=-s;
     if(p.side==='long'&&s<0)continue;
     if(p.side==='short'&&s>0)continue;
+    if(p.session&&p.session!=='none'){
+      const dt=new Date(arr[i].t),hU=dt.getUTCHours(),dw=dt.getUTCDay();
+      let okS=true;
+      if(p.session==='us')okS=hU>=13&&hU<21;
+      else if(p.session==='asia')okS=hU>=0&&hU<8;
+      else if(p.session==='eu')okS=hU>=7&&hU<15;
+      else if(p.session==='monday')okS=(dw===0&&hU>=23)||(dw===1&&hU<23);
+      if(!okS)continue;
+    }
     if(fArr){const f=fArr[i];if(!isFinite(f))continue;
       if(s>0&&c[i]<f)continue; if(s<0&&c[i]>f)continue;}
     const ei=i+W;
@@ -1445,11 +1502,11 @@ $('btSend').onclick=async()=>{
 
 /* ============ 戦略一括スキャン ============ */
 let swAbort=false,swLast=null;
-const GROUP_LEV={'スイング':3,'デイトレード':5,'スキャルピング':10,'待機エントリー型':3};
+const GROUP_LEV={'スイング':2,'デイトレード':3,'スキャルピング':5,'待機エントリー型':2,'マイプリセット':3,'マイ':3};
 function paramsFromSet(s){
   const d={mode:'single',coin:'BTC',topN:30,iv:'1h',count:1500,cond:'momentum',
     K:4,X:3,F:20,S:50,DN:20,VBk:0.5,BP:20,BK:2,rsiMode:'levels',rsiP:14,rsiLo:30,rsiHi:70,
-    N:5,Vk:4,Vm:20,trend:'follow',side:'both',filter:'none',H:6,wait:0,sl:0,tp:0,fee:0.045,overlap:'skip',lev:1,stopUnit:'pct',atrP:14};
+    N:5,Vk:4,Vm:20,trend:'follow',side:'both',filter:'none',session:'none',H:6,wait:0,sl:0,tp:0,fee:0.045,overlap:'skip',lev:1,stopUnit:'pct',atrP:14};
   return Object.assign({},d,s);
 }
 function sweepTargets(){
@@ -1470,20 +1527,22 @@ $('swRun').onclick=async()=>{
   const fee=Math.max(0,parseFloat($('bFee').value)||0.045);
   swAbort=false;$('swRun').disabled=true;$('swStop').disabled=false;
   $('swWrap').style.display='none';$('swSend').style.display='none';
+  const ALLP=PRESETS.map((p,i)=>({sel:'b:'+i,g:p.g,label:p.label,set:p.set}))
+    .concat(myPresets.map((m,i)=>({sel:'m:'+i,g:'マイ',label:'⭐'+m.label,set:m.set})));
   const now=Date.now(),results=[];
-  for(let si=0;si<PRESETS.length;si++){
+  for(let si=0;si<ALLP.length;si++){
     if(swAbort)break;
-    const pre=PRESETS[si];
+    const pre=ALLP[si];
     const p=paramsFromSet(pre.set);
-    p.fee=fee;
-    p.lev=levSel==='auto'?(GROUP_LEV[pre.g]||5):+levSel;
+    p.fee=(pre.set.fee!=null)?pre.set.fee:fee;
+    p.lev=levSel==='auto'?(pre.set.lev||GROUP_LEV[pre.g]||3):+levSel;
     p.minT=now-winMs;
     const wb=Math.ceil(winMs/IV_MS[p.iv]);
     p.count=Math.min(5000,Math.max(60,condWarm(p)+(p.filter==='sma200'?201:p.filter==='sma50'?51:0)+wb+p.H+(p.wait||0)+10));
     const all=[];
     for(const coin of targets){
       if(swAbort)break;
-      $('swProg').textContent=`検証中 ${si+1}/${PRESETS.length} — ${pre.label} ｜ ${dispName(coin)}`;
+      $('swProg').textContent=`検証中 ${si+1}/${ALLP.length} — ${pre.label} ｜ ${dispName(coin)}`;
       try{
         const arr=await getCandles(coin,p.iv,p.count);
         const tr=runStrategy(arr,Object.assign({},p,{mmf:1/(2*((ctx[coin]&&ctx[coin].maxLev)||50))}));
@@ -1493,7 +1552,7 @@ $('swRun').onclick=async()=>{
     }
     all.sort((a,b)=>a.t-b.t);
     const st=stats(all); st.liq=all.filter(t=>t.reason==='liq').length;
-    results.push({i:si,g:pre.g,label:pre.label,iv:p.iv,lev:p.lev,st});
+    results.push({sel:pre.sel,g:pre.g,label:pre.label,iv:p.iv,lev:p.lev,st});
   }
   $('swRun').disabled=false;$('swStop').disabled=true;
   $('swProg').textContent=swAbort?'中断しました':'';
@@ -1513,7 +1572,7 @@ function renderSweep(){
     <td class="num">${r.st.pf===Infinity?'∞':fxx(r.st.pf,2)}</td>
     <td class="num">${fxx(r.st.dd,1)}</td>
     <td class="num ${r.st.liq?'neg':''}">${r.st.liq||0}</td>
-    <td><button class="btn" data-load="${r.i}" style="font-size:11px;padding:3px 8px">読込</button></td>
+    <td><button class="btn" data-load="${esc(r.sel)}" style="font-size:11px;padding:3px 8px">読込</button></td>
   </tr>`).join('')||'<tr><td colspan="10" class="dimtx">結果なし</td></tr>';
   $('swWrap').style.display='';$('swSend').style.display='';
 }
@@ -1757,6 +1816,21 @@ function syncStopUnit(){const a=$('bStopUnit').value==='atr';
   document.querySelectorAll('.b-atr').forEach(el=>el.style.display=a?'':'none');}
 $('bStopUnit').addEventListener('change',syncStopUnit);
 $('btStop').onclick=()=>{btAbort=true;};
+$('btCfg').onclick=()=>{
+  const p=btParams();
+  if(p.mode!=='single')toast('注: bot運用は「単一銘柄」推奨（1bot＝1戦略×1銘柄）。現在の銘柄欄の値を書き出します');
+  const cfg={_generated:new Date().toISOString(),_source:'HL Signal Lab',
+    coin:resolveCoin(p.coin)||p.coin||'BTC',interval:p.iv,
+    strategy:{cond:p.cond,K:p.K,X:p.X,F:p.F,S:p.S,DN:p.DN,VBk:p.VBk,BP:p.BP,BK:p.BK,
+      rsiMode:p.rsiMode,rsiP:p.rsiP,rsiLo:p.rsiLo,rsiHi:p.rsiHi,N:p.N,Vk:p.Vk,Vm:p.Vm},
+    trend:p.trend,side:p.side,filter:p.filter,session:p.session,wait:p.wait,hold:p.H,
+    stop:{unit:p.stopUnit,atrP:p.atrP,sl:p.sl,tp:p.tp},
+    leverage:p.lev,risk:{riskPctPerTrade:0.5,dailyLossStopPct:3},mode:'paper'};
+  const a=document.createElement('a');
+  a.href=URL.createObjectURL(new Blob([JSON.stringify(cfg,null,2)],{type:'application/json'}));
+  a.download='hl_bot_config.json';a.click();
+  toast('hl_bot_config.json を書き出しました。botフォルダに置いて使います');
+};
 
 $('btRun').onclick=async()=>{
   const p=btParams();
@@ -1834,84 +1908,114 @@ $('btRun').onclick=async()=>{
 
 /* ============ プリセット（リサーチ根拠つき） ============ */
 const PRESETS=[
-/* ---- スイング（日足/4時間足）：研究・検証記事で最も裏付けが厚い領域 ---- */
-{g:'スイング',label:'BTC｜タートル流 ドンチャン20日ブレイク（ロング）',
- set:{mode:'single',coin:'BTC',iv:'1d',count:1600,cond:'donchian',DN:20,trend:'follow',side:'long',filter:'sma200',H:20,sl:8,tp:0,fee:0.045},
- note:'【定番・検証記事多数】20日高値の終値ブレイクで買い。トレンドフォロー型の典型で、勝率は3〜4割と低いが少数の大トレンドで稼ぐプロファイル。BTC日足で複数の相場サイクルを跨いでプラスとの検証報告あり。SMA200フィルタは横ばい相場のダマシ削減用。'},
-{g:'スイング',label:'BTC｜EMAクロス 20/50 日足（両方向）',
- set:{mode:'single',coin:'BTC',iv:'1d',count:1600,cond:'emacross',F:20,S:50,trend:'follow',side:'both',filter:'none',H:15,sl:8,tp:0,fee:0.045},
- note:'【検証記事で好成績】BTC日足のEMAクロスは検証記事でPF1.5〜1.6・高シャープと報告される代表的トレンドフォロー。「小さく負けて大きく勝つ」型なので勝率4割前後でも成立。レンジ相場ではダマシ連発が弱点。'},
-{g:'スイング',label:'ETH｜EMAクロス 20/50 日足（両方向）',
- set:{mode:'single',coin:'ETH',iv:'1d',count:1600,cond:'emacross',F:20,S:50,trend:'follow',side:'both',filter:'none',H:15,sl:8,tp:0,fee:0.045},
- note:'【検証記事あり】同じEMAクロスでもETHはBTCよりPFが低め（1.1〜1.2程度）との報告。BTCとの成績差を比較する基準としても有用。'},
-{g:'スイング',label:'BTC｜週次タイムシリーズ・モメンタム',
- set:{mode:'single',coin:'BTC',iv:'1d',count:1600,cond:'momentum',K:7,X:3,trend:'follow',side:'both',filter:'none',H:7,sl:8,tp:0,fee:0.045},
- note:'【学術研究ベース】「直近上がっていたものはしばらく上がりやすい」時系列モメンタムは暗号資産で最も学術的裏付けが厚い現象。主要8通貨2020-2025年の研究で年率約32%との報告。過去7日+3%超で買い/−3%超で売り、7日保有。'},
-{g:'スイング',label:'BTC｜ボラティリティ・ブレイクアウト（LW式 k=0.5・ロング）',
- set:{mode:'single',coin:'BTC',iv:'1d',count:1600,cond:'volbreak',VBk:0.5,trend:'follow',side:'long',filter:'none',H:1,sl:3,tp:0,fee:0.045},
- note:'【定番・韓国クオンツ界隈で有名】Larry Williams式：前日レンジ×0.5を超える上昇で買い、翌足で決済する短期保有型。BTCで美しい資産曲線との検証報告が古くからある。本実装は終値判定なので原型（ザラ場タッチで即エントリー）よりやや不利な保守的近似。'},
-{g:'スイング',label:'BTC｜RSI(5)モメンタム 50クロス 日足',
- set:{mode:'single',coin:'BTC',iv:'1d',count:1600,cond:'rsi',rsiMode:'cross50',rsiP:5,trend:'follow',side:'long',filter:'none',H:5,sl:6,tp:0,fee:0.045},
- note:'【検証記事で好成績】BTC日足ではRSIは逆張り（30割れ買い）よりモメンタム（50上抜け買い）の方が機能するとの検証報告（PF約1.95・勝率58%・DDはガチホの半分以下）。短期RSIの50クロスで流れに乗る。'},
-/* ---- デイトレード（1時間足/4時間足） ---- */
-{g:'デイトレード',label:'BTC｜前日レンジブレイク（ドンチャン24本・1h）',
- set:{mode:'single',coin:'BTC',iv:'1h',count:3000,cond:'donchian',DN:24,trend:'follow',side:'both',filter:'sma200',H:12,sl:1.5,tp:3,fee:0.045},
- note:'【定番の日中版】過去24時間の高値/安値ブレイクに乗る。損切り1.5%/利確3%の1:2型で、勝率4割弱でも期待値が出る設計。SMA200(1h)フィルタで地合いに逆らう玉を抑制。'},
-{g:'デイトレード',label:'ETH｜EMA9/21クロス 1時間足',
- set:{mode:'single',coin:'ETH',iv:'1h',count:3000,cond:'emacross',F:9,S:21,trend:'follow',side:'both',filter:'sma200',H:12,sl:2,tp:4,fee:0.045},
- note:'【定番設定】9/21EMAはデイトレの最頻出パラメータ。クロスだけだとレンジで削られるため、SMA200方向のみ・損小利大（1:2）を初期値化。RSIやADXフィルタ併用で改善するとの報告も多い。'},
-{g:'デイトレード',label:'BTC｜4時間モメンタム順張り',
- set:{mode:'single',coin:'BTC',iv:'4h',count:2000,cond:'momentum',K:6,X:4,trend:'follow',side:'both',filter:'none',H:6,sl:3,tp:0,fee:0.045},
- note:'【学術研究の日中版】BTCには日中の時系列モメンタム（前半の動きが後半に続く傾向）の研究報告あり。直近24時間(6本)で±4%動いたら同方向に24時間乗る。'},
-{g:'デイトレード',label:'ETH｜ボリンジャー(20,2)下限反発 1h（押し目買い）',
- set:{mode:'single',coin:'ETH',iv:'1h',count:3000,cond:'boll',BP:20,BK:2,trend:'counter',side:'long',filter:'sma200',H:8,sl:2,tp:1.5,fee:0.045},
- note:'【レンジ〜上昇トレンドの押し目向け】バンド下限割れを逆張り買い。ただし裸の逆張りは下落トレンドで大負けするのが検証の定説なので、SMA200より上でのみ買う「上昇中の押し目拾い」に限定。強い下げ相場では停止推奨。'},
-/* ---- スキャルピング（5分足/15分足）：手数料が成績を支配する領域 ---- */
-{g:'スキャルピング',label:'BTC｜EMA9/21クロス 15分足',
- set:{mode:'single',coin:'BTC',iv:'15m',count:4000,cond:'emacross',F:9,S:21,trend:'follow',side:'both',filter:'sma200',H:8,sl:0.6,tp:1.2,fee:0.045},
- note:'【定番・手数料注意】スキャルの最頻出構成。片道0.045%の往復0.09%はTP1.2%の約8%を食う計算で、検証記事でも「コスト控除後に凡庸化するのが短期戦略の常」と警告される。手数料欄を実際の自分の料率に合わせて必ず再検証を。'},
-{g:'スキャルピング',label:'ETH｜ボリンジャー(20,2.5)逆張り 5分足',
- set:{mode:'single',coin:'ETH',iv:'5m',count:5000,cond:'boll',BP:20,BK:2.5,trend:'counter',side:'both',filter:'none',H:12,sl:1,tp:0.7,fee:0.045},
- note:'【レンジ専用・手数料注意】5分足のバンドタッチ逆張りはスキャルの定番だが、機能するのはレンジ相場のみ。偏差2.5で発火を厳選。トレンド発生時は連敗するため、日足が強い方向を持つ日は停止が定石。'},
-{g:'スキャルピング',label:'BTC｜RSI(7)短期反発 15分足',
- set:{mode:'single',coin:'BTC',iv:'15m',count:4000,cond:'rsi',rsiMode:'levels',rsiP:7,rsiLo:25,rsiHi:75,trend:'follow',side:'both',filter:'sma200',H:8,sl:1,tp:0.8,fee:0.045},
- note:'【要注意】短期RSI逆張りは株式では有名（Connors流）だが、暗号資産では手数料込みで負けたとの検証報告が複数ある。SMA200フィルタ＋タイトな損切りで条件を絞った版。検証で優位性が出なければ捨てる判断を。'},
-{g:'スキャルピング',label:'BTC｜出来高スパイク順張り 5分足',
- set:{mode:'single',coin:'BTC',iv:'5m',count:5000,cond:'volspike',Vk:4,Vm:20,trend:'follow',side:'both',filter:'none',H:6,sl:0.8,tp:1,fee:0.045},
- note:'【マイクロ構造系】平均の4倍出来高＋方向の揃った足＝大口の仕掛けとみて追随。清算連鎖やニュース初動を拾う発想で、BTC戦場で観察してきた「出来高の壁」をルール化したもの。滑り（スリッページ）が実運用で乗る点に注意。'},
-{g:'スキャルピング',label:'ETH｜連続5本の行き過ぎフェード 15分足',
- set:{mode:'single',coin:'ETH',iv:'15m',count:4000,cond:'streak',N:5,trend:'counter',side:'both',filter:'none',H:6,sl:1,tp:0.8,fee:0.045},
- note:'【実験的】同方向に5本連続で伸びたら反対に張る短期平均回帰。裏付けは薄めなので、まず検証で数字を確認してから。トレンドデーには機能しない。'},
-/* ---- 待機エントリー型：トリガー後にN本待ってダマシを減らす ---- */
-{g:'待機エントリー型',label:'BTC｜RSI(14)30割れ → 2本待って反発拾い 1h',
- set:{mode:'single',coin:'BTC',iv:'1h',count:3000,cond:'rsi',rsiMode:'levels',rsiP:14,rsiLo:30,rsiHi:70,trend:'follow',side:'long',filter:'sma200',wait:2,H:8,sl:2,tp:2.5,fee:0.045},
- note:'【待機ロジック】RSI30割れの即買いは「落ちるナイフ」を掴みがちなのが検証で指摘される弱点。発火から2本待ち、投げ売り一巡後にエントリーする改良型。SMA200上・ロング限定で「上昇トレンド中の押し目」に絞る。待機の代償は初動の取り逃し——即時版（遅延0）と横断検証で比較を。'},
-{g:'待機エントリー型',label:'ETH｜ボリンジャー(20,2)下限 → 1本待ち反発 1h',
- set:{mode:'single',coin:'ETH',iv:'1h',count:3000,cond:'boll',BP:20,BK:2,trend:'counter',side:'long',filter:'sma200',wait:1,H:8,sl:2,tp:1.5,fee:0.045},
- note:'【待機ロジック】バンド割れ即買いではなく、次の1本で下げ止まりを確認してから入る型。遅延0の即時版と同条件で回し、勝率と平均リターンがどちらで改善するかを数字で判定するのが正しい使い方。'},
-{g:'待機エントリー型',label:'BTC｜ドンチャン24本ブレイク → 3本リテスト待ち 1h',
- set:{mode:'single',coin:'BTC',iv:'1h',count:3000,cond:'donchian',DN:24,trend:'follow',side:'both',filter:'sma200',wait:3,H:12,sl:1.5,tp:3,fee:0.045},
- note:'【待機ロジック】ブレイク直後の飛び乗りは高値掴みになりやすい。3本待って「ブレイク→押し戻し」の後から入る発想。強い一方向トレンドでは置いていかれる欠点があるため、即時版との成績差の確認が必須。'},
-{g:'待機エントリー型',label:'BTC｜RSI(5) 50クロス → 1本確認待ち 日足',
- set:{mode:'single',coin:'BTC',iv:'1d',count:1600,cond:'rsi',rsiMode:'cross50',rsiP:5,trend:'follow',side:'long',filter:'none',wait:1,H:5,sl:6,tp:0,fee:0.045},
- note:'【待機ロジック】好成績報告のあるRSI(5)50クロスに「翌日も50上を維持していたら入る」確認を1本追加した型。クロス即日版と比べて、ダマシ削減と機会損失のどちらが勝つかを検証で判定。'},
+/* ==== 刷新版プリセット：低頻度・ATR幅・ロング偏重・時間帯効果・メイカー前提を明示 ==== */
+/* ---- スイング（日足・低レバ2x・売買回数を絞ってコスト負けを回避） ---- */
+{g:'スイング',label:'BTC｜EMA50/200 ゴールデンクロス 日足（超低頻度）',
+ set:{mode:'single',coin:'BTC',iv:'1d',count:2000,cond:'emacross',F:50,S:200,trend:'follow',side:'long',filter:'none',session:'none',H:60,wait:0,stopUnit:'atr',atrP:14,sl:3,tp:0,lev:2,fee:0.045},
+ note:'【王道・超低頻度】売買は年に数回。1トレードあたりの手数料負担が極小で、レバ2x×3ATR損切りなら清算距離にも余裕。トレンド相場でしか機能しない代わりに、コスト負けはほぼ起きない構造。'},
+{g:'スイング',label:'BTC｜ドンチャン55日ブレイク＋2ATR（タートル原型・ロング）',
+ set:{mode:'single',coin:'BTC',iv:'1d',count:2000,cond:'donchian',DN:55,trend:'follow',side:'long',filter:'sma200',session:'none',H:30,wait:0,stopUnit:'atr',atrP:14,sl:2,tp:0,lev:2,fee:0.045},
+ note:'【定番の低頻度化】20日→55日に伸ばして発火を厳選し、損切りを固定%からATR基準に変更。トレンド追随は「回数を減らすほどコストに勝ちやすい」が再リサーチの結論。'},
+{g:'スイング',label:'BTC｜週次モメンタム（ロング限定・200日線上のみ）',
+ set:{mode:'single',coin:'BTC',iv:'1d',count:2000,cond:'momentum',K:7,X:2,trend:'follow',side:'long',filter:'sma200',session:'none',H:7,wait:0,stopUnit:'atr',atrP:14,sl:2.5,tp:0,lev:2,fee:0.045},
+ note:'【学術研究ベース改】時系列モメンタム自体は近年の研究でも有効性の報告が続くが、ショート側と下落局面が弱点。ロング限定＋200日線フィルタで「上昇相場でだけ乗る」形に絞った版。'},
+{g:'スイング',label:'ETH｜EMA20/50 日足＋2.5ATR',
+ set:{mode:'single',coin:'ETH',iv:'1d',count:2000,cond:'emacross',F:20,S:50,trend:'follow',side:'both',filter:'sma200',session:'none',H:15,wait:0,stopUnit:'atr',atrP:14,sl:2.5,tp:0,lev:2,fee:0.045},
+ note:'【定番のATR化】固定8%損切りは高レバでは清算が先に来て機能しなかった。ATR基準に置き換え、レバ2x前提に再設計。ETHはBTCよりPFが劣る報告がある点は変わらず。'},
+{g:'スイング',label:'BTC｜押し目 RSI(2)≤10（上昇局面限定・3日決済）',
+ set:{mode:'single',coin:'BTC',iv:'1d',count:2000,cond:'rsi',rsiMode:'levels',rsiP:2,rsiLo:10,rsiHi:95,trend:'follow',side:'long',filter:'sma200',session:'none',H:3,wait:0,stopUnit:'atr',atrP:14,sl:2,tp:0,lev:2,fee:0.045},
+ note:'【要検証・改良版】裸の短期RSI逆張りは暗号資産では手数料込みで全敗報告あり。「200日線上・日足・ロングのみ・3日で必ず決済」まで絞った押し目拾い版として再構成。検証で優位が出なければ捨てる。'},
+{g:'スイング',label:'BTC｜ボラティリティ・ブレイク k=0.6（翌日決済・ロング）',
+ set:{mode:'single',coin:'BTC',iv:'1d',count:2000,cond:'volbreak',VBk:0.6,trend:'follow',side:'long',filter:'sma200',session:'none',H:1,wait:0,stopUnit:'pct',atrP:14,sl:3,tp:0,lev:3,fee:0.045},
+ note:'【韓国クオンツ定番の防御版】k=0.5→0.6で発火を厳選し200日線フィルタを追加。当日完結型なのでオーバーナイトの事故が小さい。'},
+/* ---- デイトレード（1h/4h・レバ3x・時間帯効果を活用） ---- */
+{g:'デイトレード',label:'BTC｜週明けアジア・トレンド（月曜効果）',
+ set:{mode:'single',coin:'BTC',iv:'1h',count:3000,cond:'momentum',K:3,X:0.8,trend:'follow',side:'both',filter:'none',session:'monday',H:6,wait:0,stopUnit:'atr',atrP:14,sl:1.5,tp:0,lev:3,fee:0.045},
+ note:'【2026年の研究】BTCの日中トレンド追随は「日曜NY夜〜月曜の約24時間」に収益が集中するとの報告（Monday Asia Open効果・2020年以降強まる）。その窓だけ短期トレンドに乗る。季節性は消えることがある点は織り込むこと。'},
+{g:'デイトレード',label:'BTC｜米国時間モメンタム（13–21 UTC限定）',
+ set:{mode:'single',coin:'BTC',iv:'1h',count:3000,cond:'momentum',K:4,X:1.2,trend:'follow',side:'long',filter:'sma200',session:'us',H:8,wait:0,stopUnit:'atr',atrP:14,sl:2,tp:0,lev:3,fee:0.045},
+ note:'【研究ベース】BTCの出来高・変動・価格形成は米国時間帯に集中との報告が複数。動く時間だけ順張りし、閑散時間の往復ビンタを避ける設計。'},
+{g:'デイトレード',label:'BTC｜1h ドンチャン48本＋2ATR/4ATR',
+ set:{mode:'single',coin:'BTC',iv:'1h',count:3000,cond:'donchian',DN:48,trend:'follow',side:'both',filter:'sma200',session:'none',H:24,wait:0,stopUnit:'atr',atrP:14,sl:2,tp:4,lev:3,fee:0.045},
+ note:'【前2日高安ブレイク】24本→48本に伸ばして発火を厳選、損小利大1:2をATR基準で。地合いフィルタ付き。'},
+{g:'デイトレード',label:'ETH｜4h EMA9/21＋2ATR',
+ set:{mode:'single',coin:'ETH',iv:'4h',count:2000,cond:'emacross',F:9,S:21,trend:'follow',side:'both',filter:'sma200',session:'none',H:12,wait:0,stopUnit:'atr',atrP:14,sl:2,tp:0,lev:3,fee:0.045},
+ note:'【1h→4hへ低頻度化】1hの9/21クロスは往復コストで沈みがち。4hに落として発火回数を1/4にした版。'},
+/* ---- スキャルピング（指値＝メイカー前提。成行運用なら採用不可） ---- */
+{g:'スキャルピング',label:'BTC｜15m EMA9/21＋1.5ATR（指値前提）',
+ set:{mode:'single',coin:'BTC',iv:'15m',count:4000,cond:'emacross',F:9,S:21,trend:'follow',side:'both',filter:'sma200',session:'none',H:12,wait:0,stopUnit:'atr',atrP:14,sl:1.5,tp:3,lev:5,fee:0.015},
+ note:'【メイカー前提・国内botter定石】手数料欄0.015%は指値（メイカー）約定の想定。国内で勝ち続けるbotの多くは指値執行が前提で、taker0.045%に戻すと成立しない——それがこの領域の現実。成行しか使わないなら不採用に。'},
+{g:'スキャルピング',label:'ETH｜5m ボリンジャー(20,2.5)逆張り（指値・上昇局面の押し目）',
+ set:{mode:'single',coin:'ETH',iv:'5m',count:5000,cond:'boll',BP:20,BK:2.5,trend:'counter',side:'long',filter:'sma200',session:'none',H:12,wait:1,stopUnit:'atr',atrP:14,sl:1.5,tp:1,lev:5,fee:0.015},
+ note:'【メイカー前提・レンジ/押し目専用】1本待ちで落ちるナイフを回避。トレンドデーは連敗するため日足が強く動く日は停止が前提。'},
+{g:'スキャルピング',label:'BTC｜出来高スパイク順張り 5m（指値前提）',
+ set:{mode:'single',coin:'BTC',iv:'5m',count:5000,cond:'volspike',Vk:4,Vm:20,trend:'follow',side:'both',filter:'none',session:'none',H:8,wait:0,stopUnit:'atr',atrP:14,sl:1.2,tp:1.8,lev:5,fee:0.015},
+ note:'【マイクロ構造系・メイカー前提】大口の仕掛け初動に追随。実運用ではスリッページが乗るため、検証成績から更に割り引いて見ること。'},
+/* ---- 待機エントリー型（ダマシ回避×ATR幅） ---- */
+{g:'待機エントリー型',label:'BTC｜RSI(14)<30 → 2本待ち＋2ATR（200SMA上・ロング）',
+ set:{mode:'single',coin:'BTC',iv:'1h',count:3000,cond:'rsi',rsiMode:'levels',rsiP:14,rsiLo:30,rsiHi:70,trend:'follow',side:'long',filter:'sma200',session:'none',wait:2,H:8,stopUnit:'atr',atrP:14,sl:2,tp:2.5,lev:3,fee:0.045},
+ note:'【待機ロジック】投げ売り一巡を2本待ってから上昇トレンド中の押し目だけ拾う。即時版（遅延0）と必ず比較を。'},
+{g:'待機エントリー型',label:'BTC｜ドンチャン24hブレイク → 3本リテスト＋2ATR/4ATR',
+ set:{mode:'single',coin:'BTC',iv:'1h',count:3000,cond:'donchian',DN:24,trend:'follow',side:'both',filter:'sma200',session:'none',wait:3,H:12,stopUnit:'atr',atrP:14,sl:2,tp:4,lev:3,fee:0.045},
+ note:'【待機ロジック】ブレイク直後の飛び乗りを避け、押し戻し後から入る。強い一方向トレンドでは置いていかれる欠点あり。'},
+{g:'待機エントリー型',label:'BTC｜RSI(5) 50クロス → 1本確認 日足＋2.5ATR',
+ set:{mode:'single',coin:'BTC',iv:'1d',count:2000,cond:'rsi',rsiMode:'cross50',rsiP:5,trend:'follow',side:'long',filter:'none',session:'none',wait:1,H:5,stopUnit:'atr',atrP:14,sl:2.5,tp:0,lev:2,fee:0.045},
+ note:'【待機ロジック】翌日も50上を維持していたら乗る確認型。クロス即日版との成績差で、ダマシ削減と機会損失のどちらが勝つかを判定。'},
 ];
 function fillPresets(){
-  const sel=$('bPreset');
+  const sel=$('bPreset'); const cur=sel.value;
   const gs={};
-  PRESETS.forEach((p,i)=>{(gs[p.g]||(gs[p.g]=[])).push([i,p.label]);});
-  sel.innerHTML=Object.entries(gs).map(([g,arr])=>
-    `<optgroup label="${esc(g)}">${arr.map(([i,l])=>`<option value="${i}">${esc(l)}</option>`).join('')}</optgroup>`).join('');
+  PRESETS.forEach((p,i)=>{(gs[p.g]||(gs[p.g]=[])).push(['b:'+i,p.label]);});
+  let html=Object.entries(gs).map(([g,arr])=>
+    `<optgroup label="${esc(g)}">${arr.map(([v,l])=>`<option value="${v}">${esc(l)}</option>`).join('')}</optgroup>`).join('');
+  if(myPresets.length){
+    html+=`<optgroup label="⭐ マイプリセット">${myPresets.map((m,i)=>`<option value="m:${i}">${esc(m.label)}</option>`).join('')}</optgroup>`;
+  }
+  sel.innerHTML=html;
+  if([...sel.options].some(o=>o.value===cur))sel.value=cur;
+  $('pDel').disabled=!String(sel.value).startsWith('m:');
 }
+$('bPreset').addEventListener('change',()=>{$('pDel').disabled=!String($('bPreset').value).startsWith('m:');});
+$('pSave').onclick=()=>{
+  const nm=$('pName').value.trim();
+  if(!nm){toast('マイプリセット名を入力してください');return;}
+  const set=btParams();
+  const rec={label:nm,g:'マイプリセット',set,
+    note:`【マイプリセット】${new Date().toLocaleDateString('ja-JP')}保存 ｜ ${COND_JP[set.cond]||set.cond}（${condParams(set)}）/ ${set.iv}足 / ${set.trend==='follow'?'順張り':'逆張り'} / レバ${set.lev}x / ${set.stopUnit==='atr'?'ATR幅':'%幅'} SL${set.sl} TP${set.tp}`};
+  const ix=myPresets.findIndex(m=>m.label===nm);
+  if(ix>=0)myPresets[ix]=rec; else myPresets.push(rec);
+  store.set('myPresets',myPresets);
+  fillPresets();
+  $('bPreset').value='m:'+myPresets.findIndex(m=>m.label===nm);
+  $('pDel').disabled=false;
+  toast(ix>=0?'マイプリセットを上書き保存しました':'マイプリセットとして保存しました（一括スキャンにも含まれます）');
+};
+$('pDel').onclick=()=>{
+  const v=String($('bPreset').value);
+  if(!v.startsWith('m:'))return;
+  const i=+v.slice(2);
+  const nm=myPresets[i]?myPresets[i].label:'';
+  myPresets.splice(i,1); store.set('myPresets',myPresets);
+  fillPresets(); toast(`マイプリセット「${nm}」を削除しました`);
+};
 const PRESET_MAP={mode:'bMode',coin:'bCoin',topN:'bTopN',iv:'bIv',count:'bCount',cond:'bCond',
   K:'bK',X:'bX',F:'bF',S:'bS',DN:'bDN',VBk:'bVBk',BP:'bBP',BK:'bBK',
   rsiMode:'bRsiMode',rsiP:'bRsiP',rsiLo:'bRsiLo',rsiHi:'bRsiHi',N:'bN',Vk:'bVk',Vm:'bVm',
-  trend:'bTrend',side:'bSide',filter:'bFilter',H:'bHold',wait:'bWait',sl:'bSl',tp:'bTp',fee:'bFee'};
+  trend:'bTrend',side:'bSide',filter:'bFilter',session:'bSession',H:'bHold',wait:'bWait',
+  stopUnit:'bStopUnit',atrP:'bAtrP',sl:'bSl',tp:'bTp',lev:'bLev',fee:'bFee'};
+let myPresets=store.get('myPresets',[]);
+function currentPreset(){
+  const v=String($('bPreset').value);
+  if(v.startsWith('m:'))return myPresets[+v.slice(2)]||null;
+  if(v.startsWith('b:'))return PRESETS[+v.slice(2)]||null;
+  return PRESETS[+v]||null;
+}
 function applyPreset(scan){
-  const p=PRESETS[+$('bPreset').value]; if(!p)return;
+  const p=currentPreset(); if(!p)return;
   const s=p.set;
   $('bWait').value=0;
-  $('bStopUnit').value='pct'; syncStopUnit();
+  $('bStopUnit').value='pct';
+  $('bSession').value='none';
   for(const [k,id] of Object.entries(PRESET_MAP)){
     if(!(k in s))continue;
     if(scan&&(k==='mode'||k==='coin'))continue;
@@ -1925,10 +2029,10 @@ function applyPreset(scan){
       store.set('picked',pickedCoins);
     }
   }
-  $('bLev').value=('lev' in s)?s.lev:(GROUP_LEV[p.g]||5);
-  syncBtMode(); syncCond();
+  if(!('lev' in s))$('bLev').value=GROUP_LEV[p.g]||3;
+  syncBtMode(); syncCond(); syncStopUnit();
   const nd=$('presetNote'); nd.style.display='';
-  nd.innerHTML=`<span class="tag">${esc(p.g)}</span>`+esc(p.note);
+  nd.innerHTML=`<span class="tag">${esc(p.g||'マイ')}</span>`+esc(p.note||'（メモなし）');
   if(scan){toast('選択中の銘柄群に同じロジックを適用して横断検証します');$('btRun').click();}
   else toast('プリセットを読み込みました。「検証を実行」で直近データの成績を確認してください');
 }
