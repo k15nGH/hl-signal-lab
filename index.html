@@ -100,6 +100,7 @@ tbody tr:nth-child(even):not(.hot):not(:hover){background:#0e141b}
 .chip{border:1px solid var(--line);background:var(--panel2);border-radius:999px;padding:4px 12px;font-size:12.5px;color:var(--dim);cursor:pointer;user-select:none;transition:border-color .12s,color .12s}
 .chip:hover{border-color:var(--amber-dim);color:var(--tx)}
 .chip.on{border-color:var(--amber);color:var(--amber);background:rgba(245,184,75,.08);font-weight:700}
+.btn.xs{padding:3px 8px;font-size:11px}
 .tag{display:inline-block;border:1px solid var(--amber-dim);color:var(--amber);border-radius:4px;padding:0 6px;font-size:10.5px;font-weight:700;letter-spacing:.08em;margin-right:6px;vertical-align:1px}
 .medal{margin-right:4px}
 .tier-S{color:#F5B84B;font-weight:800}.tier-A{color:#2FD48C;font-weight:700}.tier-B{color:#8fb4d6}.tier-C{color:var(--dim)}
@@ -133,6 +134,7 @@ footer{border-top:1px solid var(--line);padding:16px;color:var(--dim);font-size:
 
 <nav class="tabs">
   <button data-tab="scan" class="act">スキャナー</button>
+  <button data-tab="pos">ポジション<span id="posBadge" class="badge" style="display:none">0</span></button>
   <button data-tab="rules">アラート設定</button>
   <button data-tab="log">ログ<span id="logBadge" class="badge" style="display:none">0</span></button>
   <button data-tab="bt">バックテスト</button>
@@ -143,13 +145,6 @@ footer{border-top:1px solid var(--line);padding:16px;color:var(--dim);font-size:
 
 <!-- ================= スキャナー ================= -->
 <section id="tab-scan" class="tab act">
-  <div class="card" id="posCard" style="display:none">
-    <h3>自分のポジション（清算監視）</h3>
-    <div class="tblwrap"><table><thead><tr>
-      <th style="text-align:left">銘柄</th><th>方向</th><th>サイズ</th><th>レバ</th><th>エントリー</th><th>現在値</th><th>清算価格</th><th>清算まで</th><th>uPnL($)</th>
-    </tr></thead><tbody id="posBody"></tbody></table></div>
-    <div class="hint" id="posAcct" style="margin-top:6px"></div>
-  </div>
   <div class="row">
     <input id="q" class="inp" placeholder="銘柄検索 (例: HYPE, SPCX)" style="width:190px">
     <label class="dimtx" style="font-size:12px">最低24h出来高
@@ -171,6 +166,41 @@ footer{border-top:1px solid var(--line);padding:16px;color:var(--dim);font-size:
       </tr></thead>
       <tbody id="scanBody"><tr><td colspan="10" class="dimtx">読み込み中…</td></tr></tbody>
     </table>
+  </div>
+</section>
+
+<!-- ================= ポジション ================= -->
+<section id="tab-pos" class="tab">
+  <div class="card" id="posCard" style="display:none">
+    <h3>ポジション & リアルタイム損益</h3>
+    <div class="grid" id="posSum" style="margin-bottom:10px"></div>
+    <div class="tblwrap"><table><thead><tr>
+      <th style="text-align:left">銘柄</th><th>方向</th><th>サイズ</th><th>レバ</th><th>エントリー</th><th>現在値</th><th>清算価格</th><th>清算まで</th><th>uPnL($)</th><th>ROE%</th><th>操作</th>
+    </tr></thead><tbody id="posBody"></tbody></table></div>
+    <div class="hint" id="posAcct" style="margin-top:6px"></div>
+    <div class="row" style="margin-top:10px;margin-bottom:0">
+      <button id="closeAllBtn" class="btn" style="border-color:var(--dn);color:var(--dn)">🚨 全ポジション成行決済</button>
+      <span class="hint">「50%」「✕全決済」は<b>成行相当（IOC・許容スリッページ1%）のリデュースオンリー注文</b>を送信します。実行前に確認ダイアログが出ます。</span>
+    </div>
+  </div>
+  <div class="card" id="posOff">
+    <div class="dimtx">設定タブの「ポジション監視」でウォレット公開アドレスを登録し、監視をONにするとここに一覧が表示されます。</div>
+  </div>
+
+  <div class="card">
+    <h3>決済機能の署名キー（APIウォレット）</h3>
+    <div class="fieldgrid">
+      <div class="f" style="grid-column:1/-1"><label>エージェント（APIウォレット）の秘密鍵 — 決済ボタンを使う場合のみ</label>
+        <input id="pkInput" class="inp num" type="password" placeholder="0x…（Hyperliquidアプリ More→API で生成）" autocomplete="off"></div>
+    </div>
+    <div class="row" style="margin-top:10px;margin-bottom:0">
+      <label class="chk"><input type="checkbox" id="pkSave"> この端末に保存する（未チェック＝タブを閉じると消える）</label>
+      <button id="pkSet" class="btn primary">キーを設定</button>
+      <button id="pkClear" class="btn">キーを削除</button>
+      <span id="pkStatus" class="dimtx" style="font-size:12px">未設定（表示のみ・決済不可）</span>
+    </div>
+    <div class="hint"><span class="warn">⚠ 入れてよいのは「出金不可のAPIウォレット（エージェント）キー」だけ。本体ウォレットの秘密鍵・シードフレーズは絶対に入力しないでください。</span><br>
+    キーは既定でメモリのみ保持（保存にチェックした場合のみこのブラウザに保存）。共用PCでは保存しないこと。初回は<b>ごく小さな手動ポジションで決済テスト</b>をしてから常用を。HIP-3ビルダー銘柄の決済は本版では未対応（表示のみ）。署名は実績あるOSS SDK（@nktkas/hyperliquid）をCDNから読み込んで行います。</div>
   </div>
 </section>
 
@@ -242,6 +272,13 @@ footer{border-top:1px solid var(--line);padding:16px;color:var(--dim);font-size:
 
 <!-- ================= ログ ================= -->
 <section id="tab-log" class="tab">
+  <div class="card" id="ruleScoreCard" style="display:none">
+    <h3>ルール別 答え合わせ成績（参考プラン基準）</h3>
+    <div class="tblwrap"><table><thead><tr>
+      <th style="text-align:left">ルール</th><th>発火</th><th>追跡中</th><th>✓利確</th><th>✗損切</th><th>⏱満了+</th><th>⏱満了−</th><th>勝率*</th><th>平均結果%</th>
+    </tr></thead><tbody id="ruleScoreBody"></tbody></table></div>
+    <div class="hint">*勝率＝決着済みのうち「利確到達＋24時間後プラス」の割合。判定はポーリング時点の価格のため、足のヒゲの一瞬タッチは拾えないことがあります。追跡はページを開いている間のみ進みます。</div>
+  </div>
   <div class="row">
     <select id="lgRule" class="btn"><option value="">全ルール</option></select>
     <select id="lgTier" class="btn"><option value="">全確度</option><option value="S">S級のみ</option><option value="A">A級のみ</option><option value="B">B級のみ</option><option value="C">C級のみ</option></select>
@@ -252,8 +289,8 @@ footer{border-top:1px solid var(--line);padding:16px;color:var(--dim);font-size:
     <button id="logCsv" class="btn">CSV（絞り込み反映）</button>
   </div>
   <div class="tblwrap">
-    <table id="logTbl"><thead><tr><th style="text-align:left" data-k="t">時刻</th><th style="text-align:left" data-k="coin">銘柄</th><th style="text-align:left" data-k="pts">確度</th><th style="text-align:left" data-k="rule">ルール</th><th style="text-align:left">内容</th></tr></thead>
-    <tbody id="logBody"><tr><td colspan="5" class="dimtx">アラートはまだありません</td></tr></tbody></table>
+    <table id="logTbl"><thead><tr><th style="text-align:left" data-k="t">時刻</th><th style="text-align:left" data-k="coin">銘柄</th><th style="text-align:left" data-k="pts">確度</th><th style="text-align:left">結果</th><th style="text-align:left" data-k="rule">ルール</th><th style="text-align:left">内容</th></tr></thead>
+    <tbody id="logBody"><tr><td colspan="6" class="dimtx">アラートはまだありません</td></tr></tbody></table>
   </div>
 </section>
 
@@ -469,19 +506,31 @@ footer{border-top:1px solid var(--line);padding:16px;color:var(--dim);font-size:
   <div class="card">
     <h3>Discord通知（メイン通知チャネル）</h3>
     <div class="fieldgrid">
-      <div class="f" style="grid-column:1/-1"><label>Webhook URL</label>
+      <div class="f" style="grid-column:1/-1"><label>メインWebhook（シグナル通知／他が空欄のときの送信先）</label>
         <input id="dcUrl" class="inp" placeholder="https://discord.com/api/webhooks/…" autocomplete="off"></div>
+      <div class="f"><label>🔎 答え合わせ 専用（任意・空欄＝メインへ）</label>
+        <input id="dcUrlAns" class="inp" placeholder="https://discord.com/api/webhooks/…" autocomplete="off"></div>
+      <div class="f"><label>⚡ 清算警報 専用（任意）</label>
+        <input id="dcUrlLiq" class="inp" placeholder="https://discord.com/api/webhooks/…" autocomplete="off"></div>
+      <div class="f"><label>🫀 ハートビート 専用（任意）</label>
+        <input id="dcUrlHb" class="inp" placeholder="https://discord.com/api/webhooks/…" autocomplete="off"></div>
+      <div class="f"><label>📊 検証レポート 専用（任意）</label>
+        <input id="dcUrlRep" class="inp" placeholder="https://discord.com/api/webhooks/…" autocomplete="off"></div>
     </div>
     <div class="row" style="margin-top:10px;margin-bottom:0">
       <label class="chk"><input type="checkbox" id="dcOn"> アラートをDiscordに送信する</label>
+      <label class="dimtx" style="font-size:12px">送信する最低確度
+        <select id="dcMin" class="btn"><option value="0">全て</option><option value="40">B級以上</option><option value="60">A級以上</option><option value="80">S級のみ</option></select>
+      </label>
       <label class="chk"><input type="checkbox" id="dcMention"> S級（80点以上）のとき @here メンション</label>
       <label class="chk"><input type="checkbox" id="dcHb"> 1時間ごとに生存レポートを送信（監視継続の確認）</label>
-      <button id="dcTest" class="btn">テスト送信</button>
+      <label class="chk"><input type="checkbox" id="dcRes" checked> シグナルの答え合わせ（利確/損切/24h結果）を送信</label>
+      <button id="dcTest" class="btn">テスト送信（全チャンネル）</button>
       <span id="dcStatus" class="dimtx" style="font-size:12px"></span>
     </div>
-    <div class="hint">通知は確度スコア（0〜100点）で自動格付けされます: <span class="tier-S">S級=複合シグナル(80+)</span> / <span class="tier-A">A級=高確度(60+)</span> / <span class="tier-B">B級=通常(40+)</span> / <span class="tier-C">C級=参考(40未満)</span>。スコアの根拠（しきい値超過の強さ・24hトレンド一致・出来高順位・OI増減・複数ルール同時発火）はメッセージ内に明記されます。</div>
-    <div class="hint">作成手順: Discordのサーバー設定 → 連携サービス → ウェブフック → 新しいウェブフック → チャンネルを選んでURLをコピー。<br>
-    <span class="warn">URLはこの端末のブラウザにのみ保存されます。GitHubのコードやコミットには絶対に書き込まないでください（URLを知る人は誰でも投稿できます）。</span></div>
+    <div class="hint">おすすめ構成: Discordに <b>#シグナル / #答え合わせ / #清算警報 / #レポート / #死活</b> の5チャンネルを作り、各チャンネルでウェブフックを1本ずつ発行して貼り分けます（空欄はメインに集約）。「送信する最低確度」はシグナル通知のみに効き、答え合わせ・清算警報・ハートビート・レポートは常に送られます。通知は確度スコアで自動格付け: <span class="tier-S">S級(80+)</span> / <span class="tier-A">A級(60+)</span> / <span class="tier-B">B級(40+)</span> / <span class="tier-C">C級</span>。根拠はメッセージ内に明記。<br>
+    <span class="warn">Webhook URLはこの端末のブラウザにのみ保存されます。GitHubのコードやコミットには絶対に書き込まないでください。</span></div>
+    <div class="hint">Webhook作成手順: 各チャンネルの設定（⚙）→ 連携サービス → ウェブフック → 新しいウェブフック → URLをコピー。</div>
   </div>
 
   <div class="card">
@@ -565,7 +614,9 @@ if(!rules.some(r=>r.type==='liqNear')){
   store.set('rules',rules);
 }
 let positions={},acct=null;
-let settings=Object.assign({webhook:'',dcOn:false,dex:{},addr:'',posOn:false},store.get('settings',{}));
+let mainIdx={},szDecs={};
+let settings=Object.assign({webhook:'',whAns:'',whLiq:'',whHb:'',whRep:'',dcMin:0,dcOn:false,dex:{},addr:'',posOn:false,dcRes:true},store.get('settings',{}));
+let tracks=store.get('tracks',[]);
 let dexList=[];
 let cooldown={}, levelSide={}, fundSide={};
 let logItems=[], unseen=0;
@@ -628,6 +679,7 @@ async function poll(){
             const px=parseFloat(c.markPx);
             if(!isFinite(px)||px<=0)return;
             const key=dx?(u.name.includes(':')?u.name:dx+':'+u.name):u.name;
+            if(!dx){mainIdx[u.name]=i;szDecs[u.name]=parseInt(u.szDecimals)||0;}
             seen.add(key);
             ctx[key]={px,prev:parseFloat(c.prevDayPx),fund:parseFloat(c.funding),
               oi:parseFloat(c.openInterest)*px,vol:parseFloat(c.dayNtlVlm),dex:dx,
@@ -647,6 +699,7 @@ async function poll(){
     $('stTime').textContent=new Date().toLocaleTimeString('ja-JP');
     renderScan(); fillCoinList(); renderMovers(); renderChipsIfNeeded(); renderPositions();
     evalRules(Date.now());
+    trackTick(Date.now());
   }catch(e){
     $('lamp').className='lamp err';
     $('stMeta').textContent='接続エラー: '+e.message;
@@ -792,7 +845,24 @@ function assessAlert(name,r,f,now){
 function emitAlert(name,r,f,now){
   const a=assessAlert(name,r,f,now);
   if(f.minPts&&a.pts<f.minPts){a.pts=f.minPts;a.tier=tierOf(a.pts,f.dir);}
-  logItems.unshift({t:now,coin:name,rule:r.name,msg:f.msg,tier:a.tier.k,pts:a.pts});
+  const plan=r.plan||'follow', cx=ctx[name];
+  const long=(plan==='none')?(f.dir==='up'):((plan==='follow')===(f.dir==='up'));
+  const e0=cx?cx.px:NaN;
+  let slP=null,tpP=null;
+  if(plan!=='none'&&r.type!=='liqNear'&&isFinite(e0)){
+    if(r.slp>0)slP=long?e0*(1-r.slp/100):e0*(1+r.slp/100);
+    if(r.tpp>0)tpP=long?e0*(1+r.tpp/100):e0*(1-r.tpp/100);
+  }
+  let trackId=null;
+  if(r.type!=='liqNear'&&isFinite(e0)&&e0>0){
+    trackId=uid();
+    tracks.unshift({id:trackId,t:now,coin:name,rule:r.name,tier:a.tier.k,pts:a.pts,
+      dir:long?1:-1,entry:e0,sl:slP,tp:tpP,slp:r.slp||0,tpp:r.tpp||0,
+      marks:{},status:'open',cur:0,res:null,tRes:null});
+    if(tracks.length>300)tracks.length=300;
+    tracksSave();
+  }
+  logItems.unshift({t:now,coin:name,rule:r.name,msg:f.msg,tier:a.tier.k,pts:a.pts,trackId});
   if(logItems.length>500)logItems.length=500;
   unseen++; updateBadge(); renderLog();
   hotRows[name]=now+6e3;
@@ -806,31 +876,70 @@ function emitAlert(name,r,f,now){
     :a.tier.k==='A'?'高確度シグナル。チャート確認の価値あり。'
     :a.tier.k==='B'?'通常シグナル。':'参考情報（単発・弱め）。';
   let planTxt='';
-  const plan=r.plan||'follow', cx=ctx[name];
-  if(plan!=='none'&&r.type!=='liqNear'&&cx&&((r.slp>0)||(r.tpp>0))){
-    const long=(plan==='follow')===(f.dir==='up');
-    const e=cx.px;
-    const slP=r.slp>0?(long?e*(1-r.slp/100):e*(1+r.slp/100)):null;
-    const tpP=r.tpp>0?(long?e*(1+r.tpp/100):e*(1-r.tpp/100)):null;
+  if(plan!=='none'&&r.type!=='liqNear'&&isFinite(e0)&&((r.slp>0)||(r.tpp>0))){
     planTxt=`\n\n**参考トレードプラン（${plan==='follow'?'順張り':'逆張り'}・${long?'🟢ロング':'🔴ショート'}想定）**`
-      +`\nエントリー: ${fmtPx(e)}（現値・成行想定）`
+      +`\nエントリー: ${fmtPx(e0)}（現値・成行想定）`
       +(slP!=null?`\n損切り: ${fmtPx(slP)}（${long?'−':'+'}${r.slp}%）`:'')
       +(tpP!=null?`\n利確: ${fmtPx(tpP)}（${long?'+':'−'}${r.tpp}%）`
         +(r.slp>0&&r.tpp>0?` ｜ R:R = 1:${(r.tpp/r.slp).toFixed(1)}`:''):'')
       +`\n※参考情報であり売買指示ではありません`;
   }
-  dcPush({
+  const sendOk=(r.type==='liqNear')||a.pts>=(+settings.dcMin||0);
+  const trackNote=(trackId&&settings.dcOn&&settings.dcRes&&sendOk)?'\n\n🔎 この後の値動きを自動追跡し、決着時に結果を送信します':'';
+  if(sendOk)dcPush({
     title:`${a.tier.emoji}【${a.tier.k}級 ${a.pts}点】${dispName(name)} — ${r.name}`,
     description:`${f.msg}\n${tierLine}\n\n**根拠**\n${a.why.length?a.why.map(w=>'・'+w).join('\n'):'・単独発火'}`
       +planTxt
-      +(dexTag(name)?`\n\nDEX: ${dexTag(name)}（HIP-3・手数料約2倍）`:''),
+      +(dexTag(name)?`\n\nDEX: ${dexTag(name)}（HIP-3・手数料約2倍）`:'')
+      +trackNote,
     color:a.tier.color,
     timestamp:new Date(now).toISOString(),
     footer:{text:`HL Signal Lab ｜ 確度 ${a.pts}/100（${a.tier.jp}）`}
-  },a.tier.k==='S'&&!!settings.mention);
+  },a.tier.k==='S'&&!!settings.mention,r.type==='liqNear'?'liq':'sig');
   try{if('Notification' in window&&Notification.permission==='granted')
     new Notification(`【${a.tier.k}】${dispName(name)} ${r.name}`,{body:f.msg,tag:name+r.id});}catch(e){}
   playTone(f.dir);
+}
+/* ============ シグナル答え合わせ（アウトカム追跡） ============ */
+function tracksSave(){try{store.set('tracks',tracks.slice(0,300))}catch(e){}}
+const HORIZONS=[['m15',9e5,'15分'],['h1',36e5,'1時間'],['h4',144e5,'4時間'],['h24',864e5,'24時間']];
+function trackTick(now){
+  let changed=false;
+  for(const tr of tracks){
+    if(tr.status!=='open')continue;
+    const c=ctx[tr.coin]; if(!c||!isFinite(c.px))continue;
+    const ret=tr.dir*(c.px-tr.entry)/tr.entry*100;
+    tr.cur=+ret.toFixed(2);
+    for(const [k,ms] of HORIZONS){
+      if(tr.marks[k]==null&&now-tr.t>=ms){tr.marks[k]=+ret.toFixed(2);changed=true;}
+    }
+    if(tr.sl!=null&&((tr.dir>0&&c.px<=tr.sl)||(tr.dir<0&&c.px>=tr.sl))){
+      tr.status='sl';tr.res=-(tr.slp||Math.abs(ret));tr.tRes=now;changed=true;
+      dcOutcome(tr);continue;
+    }
+    if(tr.tp!=null&&((tr.dir>0&&c.px>=tr.tp)||(tr.dir<0&&c.px<=tr.tp))){
+      tr.status='tp';tr.res=+(tr.tpp||ret);tr.tRes=now;changed=true;
+      dcOutcome(tr);continue;
+    }
+    if(now-tr.t>=864e5){
+      tr.status='done';tr.res=+ret.toFixed(2);tr.tRes=now;changed=true;
+      dcOutcome(tr);
+    }
+  }
+  if(changed){tracksSave();if(document.querySelector('#tab-log.act'))renderLog();}
+}
+function dcOutcome(tr){
+  if(!settings.dcRes)return;
+  const head=tr.status==='tp'?['✅ 利確ライン到達',0x2FD48C]
+    :tr.status==='sl'?['❌ 損切りライン到達',0xFF5C5C]
+    :['⏱ 24時間経過（追跡終了）',0x5b6b7a];
+  const mk=HORIZONS.map(([k,,jp])=>tr.marks[k]!=null?`${jp} ${fmtSign(tr.marks[k],2)}%`:null)
+    .filter(Boolean).join(' ｜ ');
+  dcPush({title:`${head[0]}: ${dispName(tr.coin)} ${fmtSign(tr.res,2)}%`,
+    description:`ルール: ${tr.rule}（${tr.tier}級${tr.pts}点）\n${tr.dir>0?'🟢ロング':'🔴ショート'}想定 ｜ 発火 ${fmtTime(tr.t)} @${fmtPx(tr.entry)} → 決着 ${fmtTime(tr.tRes)}`
+      +(mk?`\n途中経過: ${mk}`:''),
+    color:head[1],timestamp:new Date(tr.tRes).toISOString(),
+    footer:{text:'HL Signal Lab ｜ シグナル答え合わせ'}},false,'ans');
 }
 let toastT=null;
 function toast(html){const t=$('toast');t.innerHTML=html;t.classList.add('show');
@@ -838,53 +947,98 @@ function toast(html){const t=$('toast');t.innerHTML=html;t.classList.add('show')
 function updateBadge(){const b=$('logBadge');
   if(unseen>0){b.style.display='';b.textContent=unseen>99?'99+':unseen;}else b.style.display='none';}
 
-/* ============ Discord ============ */
+/* ============ Discord（種類別チャンネル振り分け） ============ */
 let dcQ=[],dcBusy=false;
 function dcValid(u){return /^https:\/\/(discord\.com|discordapp\.com|ptb\.discord\.com|canary\.discord\.com)\/api\/webhooks\//.test(u||'');}
+const CHAN_JP={sig:'シグナル',ans:'答え合わせ',liq:'清算警報',hb:'ハートビート',rep:'検証レポート'};
+function dcUrlFor(chan){
+  const m=(settings.webhook||'').trim();
+  const map={sig:m,ans:(settings.whAns||'').trim()||m,liq:(settings.whLiq||'').trim()||m,
+    hb:(settings.whHb||'').trim()||m,rep:(settings.whRep||'').trim()||m};
+  return map[chan]||m;
+}
 function setDcStatus(msg,ok){const el=$('dcStatus');el.textContent=msg;el.className=ok?'pos':'neg';el.style.fontSize='12px';}
-function dcPush(embed,mention){
-  if(!settings.dcOn||!dcValid(settings.webhook))return;
-  dcQ.push({embed,mention:!!mention}); dcPump();
+function dcPush(embed,mention,chan){
+  chan=chan||'sig';
+  if(!settings.dcOn||!dcValid(dcUrlFor(chan)))return;
+  dcQ.push({embed,mention:!!mention,chan}); dcPump();
 }
 async function dcPump(){
   if(dcBusy)return; dcBusy=true;
   while(dcQ.length){
-    const batch=dcQ.splice(0,10);
+    const chan=dcQ[0].chan;
+    const batch=[];
+    for(let i=0;i<dcQ.length&&batch.length<10;){
+      if(dcQ[i].chan===chan)batch.push(dcQ.splice(i,1)[0]); else i++;
+    }
+    const url=dcUrlFor(chan);
+    if(!dcValid(url))continue;
     try{
       const body={username:'HLシグナルラボ',embeds:batch.map(b=>b.embed)};
       if(batch.some(b=>b.mention))body.content='@here';
-      const res=await fetch(settings.webhook,{method:'POST',
+      const res=await fetch(url,{method:'POST',
         headers:{'Content-Type':'application/json'},
         body:JSON.stringify(body)});
       if(res.status===429){
         let ra=2; try{ra=(await res.json()).retry_after||2}catch(e){}
         dcQ.unshift(...batch); await sleep(ra*1000+300); continue;
       }
-      setDcStatus(res.ok?'Discord送信OK '+new Date().toLocaleTimeString('ja-JP'):'送信失敗 HTTP '+res.status,res.ok);
+      setDcStatus(res.ok?`送信OK（${CHAN_JP[chan]}） `+new Date().toLocaleTimeString('ja-JP'):'送信失敗 HTTP '+res.status,res.ok);
     }catch(e){setDcStatus('送信エラー（URLと接続を確認）',false);}
     await sleep(1300);
   }
   dcBusy=false;
 }
-async function dcSendNow(payload){
-  const u=(($('dcUrl').value||settings.webhook)||'').trim();
-  if(!dcValid(u)){setDcStatus('Webhook URLの形式が正しくありません（設定タブで登録）',false);
+async function dcSendNow(payload,chan){
+  chan=chan||'rep';
+  const u=dcUrlFor(chan);
+  if(!dcValid(u)){setDcStatus('Webhook URLを設定してください（設定タブ）',false);
     toast('先に設定タブでDiscord Webhook URLを登録してください');return false;}
-  settings.webhook=u; store.set('settings',settings);
   try{
     const res=await fetch(u,{method:'POST',headers:{'Content-Type':'application/json'},
       body:JSON.stringify(Object.assign({username:'HLシグナルラボ'},payload))});
-    setDcStatus(res.ok?'送信OK '+new Date().toLocaleTimeString('ja-JP'):'送信失敗 HTTP '+res.status,res.ok);
+    setDcStatus(res.ok?`送信OK（${CHAN_JP[chan]}） `+new Date().toLocaleTimeString('ja-JP'):'送信失敗 HTTP '+res.status,res.ok);
     return res.ok;
   }catch(e){setDcStatus('送信エラー（URLと接続を確認）',false);return false;}
 }
-$('dcTest').onclick=()=>dcSendNow({embeds:[{title:'✅ テスト送信',
-  description:'このチャンネルにアラートと検証結果が届きます。',color:0xF5B84B,
-  timestamp:new Date().toISOString(),footer:{text:'HL Signal Lab'}}]});
-$('dcUrl').addEventListener('change',()=>{settings.webhook=$('dcUrl').value.trim();store.set('settings',settings);});
+function saveDcInputs(){
+  settings.webhook=$('dcUrl').value.trim();
+  settings.whAns=$('dcUrlAns').value.trim();
+  settings.whLiq=$('dcUrlLiq').value.trim();
+  settings.whHb=$('dcUrlHb').value.trim();
+  settings.whRep=$('dcUrlRep').value.trim();
+  store.set('settings',settings);
+}
+['dcUrl','dcUrlAns','dcUrlLiq','dcUrlHb','dcUrlRep'].forEach(id=>
+  $(id).addEventListener('change',saveDcInputs));
+$('dcMin').addEventListener('change',()=>{settings.dcMin=+$('dcMin').value||0;store.set('settings',settings);});
+$('dcTest').onclick=async()=>{
+  saveDcInputs();
+  const seen={};
+  for(const chan of ['sig','ans','liq','hb','rep']){
+    const u=dcUrlFor(chan);
+    if(!dcValid(u))continue;
+    (seen[u]||(seen[u]=[])).push(CHAN_JP[chan]);
+  }
+  const urls=Object.keys(seen);
+  if(!urls.length){setDcStatus('有効なWebhook URLがありません',false);return;}
+  let sent=0;
+  for(const u of urls){
+    try{
+      const res=await fetch(u,{method:'POST',headers:{'Content-Type':'application/json'},
+        body:JSON.stringify({username:'HLシグナルラボ',embeds:[{title:'✅ テスト送信',
+          description:'このチャンネルには以下が届きます: **'+seen[u].join(' / ')+'**',
+          color:0xF5B84B,timestamp:new Date().toISOString(),footer:{text:'HL Signal Lab'}}]})});
+      if(res.ok)sent++;
+    }catch(e){}
+    await sleep(400);
+  }
+  setDcStatus(`テスト送信 ${sent}/${urls.length} チャンネル成功 — Discordを確認`,sent===urls.length);
+};
 $('dcOn').addEventListener('change',()=>{settings.dcOn=$('dcOn').checked;store.set('settings',settings);});
 $('dcMention').addEventListener('change',()=>{settings.mention=$('dcMention').checked;store.set('settings',settings);});
 $('dcHb').addEventListener('change',()=>{settings.hb=$('dcHb').checked;store.set('settings',settings);});
+$('dcRes').addEventListener('change',()=>{settings.dcRes=$('dcRes').checked;store.set('settings',settings);});
 $('posAddr').addEventListener('change',()=>{settings.addr=$('posAddr').value.trim();store.set('settings',settings);});
 $('posOn').addEventListener('change',()=>{settings.posOn=$('posOn').checked;store.set('settings',settings);renderPositions();});
 setInterval(()=>{
@@ -897,9 +1051,10 @@ setInterval(()=>{
       .filter(r=>isFinite(r.d)&&r.v>=1e6).sort((a,b)=>b.d-a.d);
     const up=rows.slice(0,3).map(r=>`▲${dispName(r.n)} ${fmtSign(r.d,1)}%`).join('  ');
     const dn=rows.slice(-3).reverse().map(r=>`▼${dispName(r.n)} ${fmtSign(r.d,1)}%`).join('  ');
+    const nTr=tracks.filter(t=>t.status==='open').length;
     dcPush({title:'🫀 監視稼働中（1時間レポート）',
-      description:`監視: ${names.length}銘柄 ｜ 直近1時間のアラート: ${nAl}件\n${up}\n${dn}\n※このレポートが途絶えたらブラウザ側が停止しています`,
-      color:0x5b6b7a,timestamp:new Date().toISOString(),footer:{text:'HL Signal Lab ｜ Heartbeat'}});
+      description:`監視: ${names.length}銘柄 ｜ 直近1時間のアラート: ${nAl}件 ｜ シグナル追跡中: ${nTr}件\n${up}\n${dn}\n※このレポートが途絶えたらブラウザ側が停止しています`,
+      color:0x5b6b7a,timestamp:new Date().toISOString(),footer:{text:'HL Signal Lab ｜ Heartbeat'}},false,'hb');
   }catch(e){}
 },3600e3);
 
@@ -1073,22 +1228,40 @@ function liqDistPct(key){
   return p.szi>0?(mk-p.liq)/mk*100:(p.liq-mk)/mk*100;
 }
 function renderPositions(){
-  const card=$('posCard');
   const keys=Object.keys(positions);
   $('posStatus').textContent=settings.posOn?(keys.length?`${keys.length}ポジション監視中`:'監視中（ポジションなし）'):'';
-  if(!settings.posOn){card.style.display='none';return;}
-  card.style.display='';
+  $('posOff').style.display=settings.posOn?'none':'';
+  $('posCard').style.display=settings.posOn?'':'none';
+  const nearN=keys.filter(k=>{const d=liqDistPct(k);return isFinite(d)&&d<=10;}).length;
+  const pb=$('posBadge');
+  if(nearN>0){pb.style.display='';pb.textContent=nearN;}else pb.style.display='none';
+  if(!settings.posOn)return;
+  let totU=0,totVal=0;
+  keys.forEach(k=>{totU+=positions[k].upnl||0;totVal+=positions[k].val||0;});
+  const sum=[
+    ['口座評価額',acct?fmtUsd(acct.av):'–'],
+    ['合計uPnL',`<span class="${totU>=0?'pos':'neg'}">${fmtSign(totU,2)}</span>`],
+    ['建玉総額',fmtUsd(totVal)],
+    ['維持証拠金',acct?fmtUsd(acct.mm):'–'],
+    ['出金可能',acct?fmtUsd(acct.wd):'–'],
+    ['ポジション数',keys.length+(nearN?`（⚠${nearN}）`:'')],
+  ];
+  $('posSum').innerHTML=sum.map(([k,v])=>`<div class="stat"><div class="k">${k}</div><div class="v num">${v}</div></div>`).join('');
   if(!keys.length){
-    $('posBody').innerHTML='<tr><td colspan="9" class="dimtx">オープンポジションなし</td></tr>';
-    $('posAcct').textContent=acct?`口座評価額 ${fmtUsd(acct.av)} ｜ 維持証拠金使用 ${fmtUsd(acct.mm)} ｜ 出金可能 ${fmtUsd(acct.wd)}`:'';
+    $('posBody').innerHTML='<tr><td colspan="11" class="dimtx">オープンポジションなし</td></tr>';
+    $('posAcct').textContent='';
     return;
   }
   $('posBody').innerHTML=keys.map(k=>{
     const p=positions[k], mk=ctx[k]?ctx[k].px:NaN;
     const d=liqDistPct(k);
+    const roe=(isFinite(p.upnl)&&p.mu>0)?p.upnl/p.mu*100:NaN;
     const dCls=!isFinite(d)?'dimtx':d<=5?'neg':d<=10?'warn':'pos';
-    return `<tr data-k="${esc(k)}" style="cursor:pointer" title="クリックでバックテスト対象に設定">
-      <td style="text-align:left"><b>${esc(dispName(k))}</b>${dexTag(k)?`<span class="dex">${esc(dexTag(k))}</span>`:''}</td>
+    const act=dexTag(k)
+      ?'<span class="dimtx" style="font-size:11px">HIP-3非対応</span>'
+      :`<button class="btn xs" data-close="${esc(k)}" data-frac="0.5">50%</button> <button class="btn xs" data-close="${esc(k)}" data-frac="1" style="border-color:var(--dn);color:var(--dn)">✕全決済</button>`;
+    return `<tr data-k="${esc(k)}">
+      <td style="text-align:left;cursor:pointer" title="クリックでバックテスト対象に設定"><b>${esc(dispName(k))}</b>${dexTag(k)?`<span class="dex">${esc(dexTag(k))}</span>`:''}</td>
       <td class="${p.szi>0?'pos':'neg'}">${p.szi>0?'ロング':'ショート'}</td>
       <td class="num">${Math.abs(p.szi)}</td>
       <td class="num">${p.lev||'–'}x <span class="dimtx" style="font-size:10px">${p.mode==='isolated'?'分離':'クロス'}</span></td>
@@ -1097,10 +1270,93 @@ function renderPositions(){
       <td class="num">${isFinite(p.liq)?fmtPx(p.liq):'–'}</td>
       <td class="num ${dCls}"><b>${isFinite(d)?d.toFixed(2)+'%':'–'}</b></td>
       <td class="num ${p.upnl>=0?'pos':'neg'}">${fmtSign(p.upnl,2)}</td>
+      <td class="num ${roe>=0?'pos':'neg'}">${isFinite(roe)?fmtSign(roe,1)+'%':'–'}</td>
+      <td>${act}</td>
     </tr>`;}).join('');
-  $('posAcct').textContent=acct?`口座評価額 ${fmtUsd(acct.av)} ｜ 維持証拠金使用 ${fmtUsd(acct.mm)} ｜ 出金可能 ${fmtUsd(acct.wd)}`:'';
+  $('posAcct').textContent='';
+}
+
+/* ============ 手動決済（署名・発注） ============ */
+let tradeKey=null,exchClient=null;
+function pkStatusSync(){
+  $('pkStatus').textContent=tradeKey?'✅ 署名キー設定済み（決済ボタン有効）':'未設定（表示のみ・決済不可）';
+  $('pkStatus').className=tradeKey?'pos':'dimtx';
+}
+$('pkSet').onclick=()=>{
+  const v=$('pkInput').value.trim();
+  if(!/^0x[0-9a-fA-F]{64}$/.test(v)){toast('秘密鍵の形式が正しくありません（0x＋64桁の16進数）');return;}
+  tradeKey=v; exchClient=null;
+  store.set('tradeKey',$('pkSave').checked?v:'');
+  pkStatusSync();
+  toast('署名キーを設定しました。まず極小ポジションで決済テストを行ってください');
+};
+$('pkClear').onclick=()=>{
+  tradeKey=null;exchClient=null;$('pkInput').value='';store.set('tradeKey','');
+  pkStatusSync();toast('署名キーを削除しました');
+};
+(function(){
+  const s=store.get('tradeKey','');
+  if(/^0x[0-9a-fA-F]{64}$/.test(s)){tradeKey=s;$('pkInput').value=s;$('pkSave').checked=true;}
+  pkStatusSync();
+})();
+async function getExch(){
+  if(exchClient)return exchClient;
+  if(!tradeKey)throw new Error('署名キー未設定');
+  const [hl,va]=await Promise.all([
+    import('https://esm.sh/@nktkas/hyperliquid'),
+    import('https://esm.sh/viem/accounts')
+  ]);
+  const account=va.privateKeyToAccount(tradeKey);
+  exchClient=new hl.ExchangeClient({wallet:account,transport:new hl.HttpTransport()});
+  return exchClient;
+}
+function pxForClose(coin,isBuy){
+  const c=ctx[coin]; if(!c||!isFinite(c.px))return null;
+  const dec=Math.max(0,6-(szDecs[coin]??3));
+  let p=c.px*(isBuy?1.01:0.99);
+  p=parseFloat(p.toPrecision(5));
+  p=+p.toFixed(dec);
+  return p>0?p:null;
+}
+async function closePos(coin,frac,skipConfirm){
+  const p=positions[coin];
+  if(!p){toast('ポジションが見つかりません');return false;}
+  if(dexTag(coin)){toast('HIP-3銘柄の決済は本版では未対応です');return false;}
+  if(!tradeKey){toast('先に下の「署名キー」を設定してください');return false;}
+  const idx=mainIdx[dispName(coin)];
+  if(idx==null){toast('アセット情報の取得待ちです。数秒後に再試行を');return false;}
+  const dec=szDecs[dispName(coin)]??3;
+  let sz=frac>=1?Math.abs(p.szi):Math.floor(Math.abs(p.szi)*frac*10**dec)/10**dec;
+  if(!(sz>0)){toast('決済サイズが小さすぎます');return false;}
+  const isBuy=p.szi<0;
+  const px=pxForClose(coin,isBuy);
+  if(px==null){toast('価格の取得待ちです');return false;}
+  const label=`${dispName(coin)} ${p.szi>0?'ロング':'ショート'} ${frac>=1?'全量':Math.round(frac*100)+'%'}（サイズ ${sz}）`;
+  if(!skipConfirm&&!confirm(`⚠ 実際に発注します\n\n${label} を成行決済\n注文: ${isBuy?'買い':'売り'} IOC @${px}（reduce-only）\n\nよろしいですか？`))return false;
+  try{
+    toast('送信中…');
+    const ex=await getExch();
+    const res=await ex.order({orders:[{a:idx,b:isBuy,p:String(px),s:String(sz),r:true,
+      t:{limit:{tif:'Ioc'}}}],grouping:'na'});
+    let st='';
+    try{st=JSON.stringify(res.response.data.statuses);}catch(e){st=String(JSON.stringify(res)).slice(0,200);}
+    toast('✂️ 決済注文を送信しました');
+    dcPush({title:`✂️ 手動決済: ${dispName(coin)} ${frac>=1?'全量':Math.round(frac*100)+'%'}`,
+      description:`${label}\n注文: ${isBuy?'買':'売'} IOC @${px}（reduce-only）\n応答: ${st}`,
+      color:0xF5B84B,timestamp:new Date().toISOString(),
+      footer:{text:'HL Signal Lab ｜ Manual Close'}},false,'sig');
+    setTimeout(()=>{pollPositions().then(renderPositions);},1800);
+    return true;
+  }catch(e){
+    console.error(e);
+    alert('決済に失敗しました:\n'+(e&&e.message?e.message:String(e))
+      +'\n\n・SDK読み込み失敗 → 回線やCDNブロックを確認\n・署名/権限エラー → キーがHyperliquidのAPIウォレットのものか確認\n・Order has invalid price/size → 数秒待って再試行');
+    return false;
+  }
 }
 $('posBody').addEventListener('click',e=>{
+  const b=e.target.closest('button[data-close]');
+  if(b){closePos(b.dataset.close,parseFloat(b.dataset.frac),false);return;}
   const tr=e.target.closest('tr[data-k]'); if(!tr)return;
   const k=tr.dataset.k, p=positions[k]; if(!p)return;
   $('bMode').value='single'; syncBtMode();
@@ -1109,6 +1365,14 @@ $('posBody').addEventListener('click',e=>{
   renderChips();
   toast(`バックテスト対象を <b>${esc(dispName(k))}</b>（実レバ${p.lev||'?'}x）に設定しました`);
 });
+$('closeAllBtn').onclick=async()=>{
+  const keys=Object.keys(positions).filter(k=>!dexTag(k));
+  if(!keys.length){toast('決済可能なポジションがありません（HIP-3は未対応）');return;}
+  if(!tradeKey){toast('先に「署名キー」を設定してください');return;}
+  if(!confirm(`⚠ ${keys.length}件のポジションを全て成行決済します。よろしいですか？`))return;
+  if(!confirm('最終確認：本当に全ポジションを決済しますか？'))return;
+  for(const k of keys){await closePos(k,1,true);await sleep(900);}
+};
 
 /* ============ ルールUI ============ */
 let editingId=null;
@@ -1218,6 +1482,46 @@ function logFiltered(){
   });
   return a;
 }
+function trackCell(tr){
+  if(!tr)return '<span class="dimtx">–</span>';
+  if(tr.status==='open')return `<span class="${(tr.cur||0)>=0?'pos':'neg'}">${fmtSign(tr.cur||0,2)}%</span> <span class="dimtx" style="font-size:11px">追跡中</span>`;
+  if(tr.status==='tp')return `<span class="pos">✓ ${fmtSign(tr.res,2)}%</span>`;
+  if(tr.status==='sl')return `<span class="neg">✗ ${fmtSign(tr.res,2)}%</span>`;
+  return `<span class="${tr.res>=0?'pos':'neg'}">⏱ ${fmtSign(tr.res,2)}%</span>`;
+}
+function trackText(tr){
+  if(!tr)return '';
+  const st={open:'追跡中',tp:'利確',sl:'損切',done:'満了'}[tr.status];
+  const v=tr.status==='open'?tr.cur:tr.res;
+  return `${st} ${fmtSign(v||0,2)}%`;
+}
+function renderRuleScore(){
+  const card=$('ruleScoreCard');
+  if(!tracks.length){card.style.display='none';return;}
+  card.style.display='';
+  const g={};
+  tracks.forEach(t=>{
+    const o=g[t.rule]||(g[t.rule]={n:0,open:0,tp:0,sl:0,dp:0,dn:0,arr:[]});
+    o.n++;
+    if(t.status==='open'){o.open++;return;}
+    o.arr.push(t.res||0);
+    if(t.status==='tp')o.tp++;
+    else if(t.status==='sl')o.sl++;
+    else (t.res>=0)?o.dp++:o.dn++;
+  });
+  $('ruleScoreBody').innerHTML=Object.entries(g).sort((a,b)=>b[1].n-a[1].n).map(([k,v])=>{
+    const res=v.arr.length;
+    const wr=res?((v.tp+v.dp)/res*100):NaN;
+    const avg=res?(v.arr.reduce((s,x)=>s+x,0)/res):NaN;
+    return `<tr>
+      <td style="text-align:left">${esc(k)}</td>
+      <td class="num">${v.n}</td><td class="num dimtx">${v.open}</td>
+      <td class="num pos">${v.tp}</td><td class="num neg">${v.sl}</td>
+      <td class="num">${v.dp}</td><td class="num">${v.dn}</td>
+      <td class="num">${isFinite(wr)?wr.toFixed(0)+'%':'–'}</td>
+      <td class="num">${isFinite(avg)?`<span class="${avg>=0?'pos':'neg'}">${fmtSign(avg,2)}</span>`:'–'}</td>
+    </tr>`;}).join('');
+}
 function renderLog(){
   const sel=$('lgRule'),cur=sel.value;
   const rl=[...new Set(logItems.map(l=>l.rule))];
@@ -1226,13 +1530,16 @@ function renderLog(){
   const a=logFiltered();
   $('lgCount').textContent=logItems.length?`${a.length} / ${logItems.length} 件`:'';
   document.querySelectorAll('#logTbl thead th').forEach(t=>t.classList.toggle('sorted',t.dataset.k===lgK));
+  const tmap={};tracks.forEach(x=>tmap[x.id]=x);
   $('logBody').innerHTML=a.map(l=>`<tr>
     <td style="text-align:left" class="num">${fmtTime(l.t)}</td>
     <td style="text-align:left"><b>${esc(dispName(l.coin))}</b>${dexTag(l.coin)?`<span class="dex">${esc(dexTag(l.coin))}</span>`:''}</td>
     <td style="text-align:left"><span class="tier-${l.tier||'B'}">${l.tier||'–'}級 ${isFinite(l.pts)?l.pts:''}</span></td>
+    <td style="text-align:left">${trackCell(l.trackId?tmap[l.trackId]:null)}</td>
     <td style="text-align:left">${esc(l.rule)}</td>
     <td style="text-align:left">${esc(l.msg)}</td></tr>`).join('')
-    ||`<tr><td colspan="5" class="dimtx">${logItems.length?'絞り込み条件に該当なし':'アラートはまだありません'}</td></tr>`;
+    ||`<tr><td colspan="6" class="dimtx">${logItems.length?'絞り込み条件に該当なし':'アラートはまだありません'}</td></tr>`;
+  renderRuleScore();
 }
 $('lgRule').addEventListener('change',renderLog);
 $('lgTier').addEventListener('change',renderLog);
@@ -1245,8 +1552,9 @@ document.querySelectorAll('#logTbl thead th').forEach(th=>{
 $('logClear').onclick=()=>{logItems=[];unseen=0;updateBadge();renderLog();};
 $('logCsv').onclick=()=>{
   const a=logFiltered();
-  const csv='\uFEFF時刻,銘柄,確度,ルール,内容\n'+a.map(l=>
-    [new Date(l.t).toLocaleString('ja-JP'),l.coin,(l.tier||'')+(isFinite(l.pts)?l.pts:''),l.rule,l.msg].map(s=>'"'+String(s).replace(/"/g,'""')+'"').join(',')).join('\n');
+  const tmap={};tracks.forEach(x=>tmap[x.id]=x);
+  const csv='\uFEFF時刻,銘柄,確度,結果,ルール,内容\n'+a.map(l=>
+    [new Date(l.t).toLocaleString('ja-JP'),l.coin,(l.tier||'')+(isFinite(l.pts)?l.pts:''),trackText(l.trackId?tmap[l.trackId]:null),l.rule,l.msg].map(s=>'"'+String(s).replace(/"/g,'""')+'"').join(',')).join('\n');
   const dl=document.createElement('a');dl.href=URL.createObjectURL(new Blob([csv],{type:'text/csv'}));
   dl.download='hl_alerts.csv';dl.click();
 };
@@ -2077,14 +2385,21 @@ document.querySelectorAll('nav.tabs button').forEach(b=>{
     document.getElementById('tab-'+b.dataset.tab).classList.add('act');
     if(b.dataset.tab==='log'){unseen=0;updateBadge();}
     if(b.dataset.tab==='scan')renderScan();
+    if(b.dataset.tab==='pos')renderPositions();
   };
 });
 
 /* ============ 起動 ============ */
 $('dcUrl').value=settings.webhook||'';
+$('dcUrlAns').value=settings.whAns||'';
+$('dcUrlLiq').value=settings.whLiq||'';
+$('dcUrlHb').value=settings.whHb||'';
+$('dcUrlRep').value=settings.whRep||'';
+$('dcMin').value=String(settings.dcMin||0);
 $('dcOn').checked=!!settings.dcOn;
 $('dcMention').checked=!!settings.mention;
 $('dcHb').checked=!!settings.hb;
+$('dcRes').checked=settings.dcRes!==false;
 $('posAddr').value=settings.addr||'';
 $('posOn').checked=!!settings.posOn;
 syncRuleForm(); renderRules(); renderLog(); syncNotifBtn(); syncSoundBtn();
